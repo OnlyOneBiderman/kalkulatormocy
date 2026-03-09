@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalkulator Mocy OSD | Energy Flow</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Maps dla React i Lucide Icons -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.292.0"
+        }
+    }
+    </script>
+    
+    <!-- Babel (Pozwala na uruchomienie kodu React bezpośrednio w przeglądarce) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Konfiguracja czcionki -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-[#f8f9fc] text-[#1F1A38] relative overflow-x-hidden selection:bg-[#B5F566] selection:text-[#1F1A38]">
+
+    <!-- Tutaj wyrenderuje się nasz kalkulator -->
+    <div id="root"></div>
+
+    <!-- Główny kod Aplikacji -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Settings2, Sun, Zap, AlertTriangle, CheckCircle2, Info, Scale, ChevronDown, ArrowRight, Activity } from 'lucide-react';
+
+        const STORAGE_DB = [
+            { id: 'brak', name: 'BRAK', capacity: 0, ENEA: 0, PGE: 0, TAURON: 0, ENERGA: 0 },
+            { id: 'deye_5_12', name: 'DEYE SE-G5.1 Pro-B 5,12 kW', capacity: 5.12, ENEA: 2.56, PGE: 2.56, TAURON: 2.56, ENERGA: 2.56 },
+            { id: 'deye_10_24', name: 'DEYE SE-G5.1 Pro-B 10,24 kW', capacity: 10.24, ENEA: 5.12, PGE: 5.12, TAURON: 5.12, ENERGA: 5.12 },
+            { id: 'deye_15_36', name: 'DEYE SE-G5.1 Pro-B 15,36 kW', capacity: 15.36, ENEA: 7.68, PGE: 7.68, TAURON: 7.68, ENERGA: 7.68 },
+            { id: 'deye_16_00', name: 'DEYE RW-F16 16 kWh', capacity: 16.00, ENEA: 8.00, PGE: 8.00, TAURON: 8.00, ENERGA: 8.00 },
+            { id: 'deye_20_48', name: 'DEYE SE-G5.1 Pro-B 20,48 kW', capacity: 20.48, ENEA: 10.24, PGE: 10.24, TAURON: 10.24, ENERGA: 10.24 }
+        ];
+
+        const OPERATORS = ['TAURON', 'ENERGA', 'ENEA', 'PGE'];
+
+        function App() {
+            const [saleType, setSaleType] = useState('Nowa umowa');
+            const [currentPower, setCurrentPower] = useState(15);
+            const [operator, setOperator] = useState('TAURON');
+            const [keepOldInverter, setKeepOldInverter] = useState('NIE');
+
+            const [newPv, setNewPv] = useState(16);
+            const [newInverter, setNewInverter] = useState(20);
+            const [newStorageId, setNewStorageId] = useState('brak');
+
+            const [oldPv, setOldPv] = useState(0);
+            const [oldInverter, setOldInverter] = useState(0);
+            const [oldStorage, setOldStorage] = useState(0);
+
+            const isUpsell = saleType === 'UPSELL/Rozbudowa';
+
+            const calculations = useMemo(() => {
+                const num = (val) => parseFloat(val) || 0;
+
+                const selectedStorage = STORAGE_DB.find(s => s.id === newStorageId) || STORAGE_DB[0];
+                const newStoragePowerForCalc = selectedStorage[operator];
+
+                const totalPv = num(newPv) + (isUpsell ? num(oldPv) : 0);
+                const effectiveOldInverter = (isUpsell && keepOldInverter === 'TAK') ? num(oldInverter) : 0;
+                const totalInverter = num(newInverter) + effectiveOldInverter;
+                const totalStoragePower = newStoragePowerForCalc + (isUpsell ? num(oldStorage) : 0);
+
+                const isStorageNotExceedingPv = totalStoragePower <= totalPv;
+                const isInverterNotExceedingPv = totalInverter <= totalPv;
+                const isStorageExempted = isStorageNotExceedingPv && isInverterNotExceedingPv;
+
+                const totalSystemPower = isStorageExempted ? totalPv : (totalPv + totalStoragePower);
+
+                const powerDeficit = totalSystemPower - num(currentPower);
+                const isPowerSufficient = powerDeficit <= 0;
+
+                return {
+                    totalPv: totalPv.toFixed(2),
+                    totalInverter: totalInverter.toFixed(2),
+                    totalStoragePower: totalStoragePower.toFixed(2),
+                    selectedStorageName: selectedStorage.name,
+                    totalSystemPower: totalSystemPower.toFixed(2),
+                    powerDeficit: powerDeficit > 0 ? powerDeficit.toFixed(2) : 0,
+                    isPowerSufficient,
+                    isStorageExempted,
+                    isStorageNotExceedingPv,
+                    isInverterNotExceedingPv
+                };
+            }, [saleType, currentPower, operator, keepOldInverter, newPv, newInverter, newStorageId, oldPv, oldInverter, oldStorage, isUpsell]);
+
+            return (
+                <div className="min-h-screen relative z-10">
+                    <div className="fixed top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-[#9BA9EB]/30 blur-[120px] pointer-events-none z-0"></div>
+                    <div className="fixed bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-[#B5F566]/20 blur-[120px] pointer-events-none z-0"></div>
+                    <div className="fixed top-[40%] right-[10%] w-[30vw] h-[30vw] rounded-full bg-blue-300/20 blur-[100px] pointer-events-none z-0"></div>
+
+                    <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 space-y-12">
+                        
+                        <header className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.06)] p-8 flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden">
+                            <div className="absolute -top-6 -right-6 w-32 h-32 bg-gradient-to-br from-[#B5F566] to-[#9BA9EB] rounded-full blur-3xl opacity-30 z-0 pointer-events-none"></div>
+                            
+                            <div className="flex items-center gap-5 relative z-10">
+                                <div className="w-16 h-16 bg-white/60 backdrop-blur-md border border-white shadow-sm rounded-2xl flex items-center justify-center text-[#1F1A38]">
+                                    <Scale className="w-8 h-8" />
+                                </div>
+                                <div>
+                                    <h2 className="text-sm text-[#9BA9EB] font-extrabold tracking-widest uppercase mb-1 drop-shadow-sm">Analiza techniczna</h2>
+                                    <h1 className="text-3xl md:text-4xl font-extrabold text-[#1F1A38] tracking-tight">Kalkulator Mocy OSD</h1>
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col gap-3 relative z-10">
+                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider ml-1">Wybierz Operatora Sieci</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {OPERATORS.map(op => (
+                                        <button 
+                                            key={op} 
+                                            onClick={() => setOperator(op)}
+                                            className={`px-6 py-2.5 text-xs font-bold rounded-xl transition-all shadow-sm border ${operator === op ? 'bg-[#B5F566] text-[#1F1A38] border-[#B5F566] shadow-[0_4px_15px_rgba(181,245,102,0.4)] scale-105' : 'bg-white/50 text-gray-600 border-white/60 hover:bg-white hover:text-[#1F1A38]'}`}
+                                        >
+                                            {op}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </header>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            <div className="lg:col-span-4 space-y-8">
+                                <section className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:bg-white/50 transition-all relative overflow-hidden">
+                                    <h3 className="text-xl font-bold text-[#1F1A38] mb-6 flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-white/60 border border-white shadow-sm rounded-xl flex items-center justify-center text-[#9BA9EB]">
+                                            <Settings2 className="w-5 h-5" />
+                                        </div>
+                                        Dane budynku
+                                    </h3>
+                                    
+                                    <div className="space-y-5">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Moc przyłączeniowa [kW]</label>
+                                            <div className="relative">
+                                                <input type="number" value={currentPower} onChange={(e) => setCurrentPower(e.target.value)} className="block w-full pl-5 pr-12 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-extrabold text-xl shadow-inner" />
+                                                <div className="absolute inset-y-0 right-0 pr-5 flex items-center pointer-events-none">
+                                                    <span className="text-gray-400 font-bold">kW</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Typ instalacji</label>
+                                            <div className="relative">
+                                                <select value={saleType} onChange={(e) => setSaleType(e.target.value)} className="block w-full pl-5 pr-10 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-bold appearance-none cursor-pointer shadow-inner">
+                                                    <option value="Nowa umowa">Nowa umowa</option>
+                                                    <option value="UPSELL/Rozbudowa">UPSELL/Rozbudowa</option>
+                                                </select>
+                                                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {isUpsell && (
+                                            <div className="pt-5 mt-5 border-t border-white/50">
+                                                <label className="block text-[11px] font-bold text-gray-500 mb-2.5 uppercase tracking-wider ml-1">Czy stary falownik zostaje?</label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {['TAK', 'NIE'].map(val => (
+                                                        <button key={val} onClick={() => setKeepOldInverter(val)} className={`py-3 rounded-xl font-bold text-sm transition-all shadow-sm border ${keepOldInverter === val ? 'bg-[#1F1A38] text-[#B5F566] border-[#1F1A38]' : 'bg-white/40 text-gray-500 border-white/60 hover:bg-white hover:text-[#1F1A38]'}`}>
+                                                            {val}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+
+                                <section className="bg-[#1F1A38]/90 backdrop-blur-xl border border-white/30 rounded-[2rem] p-8 shadow-[0_10px_30px_rgba(31,26,56,0.2)] relative overflow-hidden text-white">
+                                    <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-[#B5F566]/10 rounded-full blur-3xl pointer-events-none"></div>
+                                    <h3 className="text-[10px] font-black text-[#B5F566] uppercase tracking-[0.25em] mb-6 flex items-center gap-2">
+                                        <Activity className="w-4 h-4" /> Raport Systemowy
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div className={`p-4 rounded-2xl border backdrop-blur-md flex items-start gap-3 transition-colors ${calculations.isStorageExempted ? 'bg-[#B5F566]/10 border-[#B5F566]/30 text-[#B5F566]' : 'bg-orange-500/10 border-orange-500/30 text-orange-400'}`}>
+                                            {calculations.isStorageExempted ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <Info className="w-5 h-5 shrink-0 mt-0.5" />}
+                                            <p className="text-xs font-bold leading-relaxed">
+                                                {calculations.isStorageExempted 
+                                                    ? "Spełniono warunki zwolnienia. Magazyn energii nie obciąża mocy przyłączeniowej (PV jest podstawą)." 
+                                                    : "Suma mocy przekracza moc paneli. Magazyn energii zostanie doliczony do mocy przyłączeniowej."}
+                                            </p>
+                                        </div>
+                                        <div className="space-y-2 mt-4">
+                                            <div className="flex justify-between items-center bg-white/5 border border-white/10 px-4 py-3 rounded-xl">
+                                                <span className="text-[10px] uppercase font-bold text-gray-400">Falownik ≤ Moc PV</span>
+                                                <span className={`text-xs font-black px-2 py-1 rounded-md ${calculations.isInverterNotExceedingPv ? 'bg-[#B5F566]/20 text-[#B5F566]' : 'bg-orange-500/20 text-orange-400'}`}>
+                                                    {calculations.isInverterNotExceedingPv ? 'TAK' : 'NIE'}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between items-center bg-white/5 border border-white/10 px-4 py-3 rounded-xl">
+                                                <span className="text-[10px] uppercase font-bold text-gray-400">Magazyn ≤ Moc PV</span>
+                                                <span className={`text-xs font-black px-2 py-1 rounded-md ${calculations.isStorageNotExceedingPv ? 'bg-[#B5F566]/20 text-[#B5F566]' : 'bg-orange-500/20 text-orange-400'}`}>
+                                                    {calculations.isStorageNotExceedingPv ? 'TAK' : 'NIE'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+
+                            <div className="lg:col-span-8 space-y-8">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:bg-white/50 transition-all">
+                                        <h3 className="text-xl font-bold text-[#1F1A38] mb-6 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-white/60 border border-white shadow-sm rounded-xl flex items-center justify-center text-[#B5F566]">
+                                                    <Zap className="w-5 h-5 fill-current" />
+                                                </div>
+                                                Nowa Instalacja
+                                            </div>
+                                            <div className="w-2 h-2 rounded-full bg-[#B5F566] animate-pulse shadow-[0_0_10px_#B5F566]" />
+                                        </h3>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Moc paneli [kWp]</label>
+                                                <input type="number" step="0.01" value={newPv} onChange={(e) => setNewPv(e.target.value)} className="block w-full px-4 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-bold shadow-inner" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Moc falownika [kW]</label>
+                                                <input type="number" step="0.01" value={newInverter} onChange={(e) => setNewInverter(e.target.value)} className="block w-full px-4 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-bold shadow-inner" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Magazyn Energii (Deye)</label>
+                                                <div className="relative">
+                                                    <select value={newStorageId} onChange={(e) => setNewStorageId(e.target.value)} className="block w-full pl-4 pr-10 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-bold appearance-none cursor-pointer shadow-inner">
+                                                        {STORAGE_DB.map(s => (
+                                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className={`bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all ${!isUpsell ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-white/50'}`}>
+                                        <h3 className="text-xl font-bold text-[#1F1A38] mb-6 flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-white/60 border border-white shadow-sm rounded-xl flex items-center justify-center text-gray-400">
+                                                <Sun className="w-5 h-5" />
+                                            </div>
+                                            Istniejący System
+                                        </h3>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Stare panele [kWp]</label>
+                                                <input type="number" step="0.01" value={oldPv} onChange={(e) => setOldPv(e.target.value)} className="block w-full px-4 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-bold shadow-inner" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider ml-1">Stary Falownik [kW]</label>
+                                                <input type="number" step="0.01" value={oldInverter} onChange={(e) => setOldInverter(e.target.value)} className="block w-full px-4 py-3.5 border border-white/60 rounded-2xl bg-white/40 text-[#1F1A38] focus:outline-none focus:ring-2 focus:ring-[#9BA9EB]/50 focus:bg-white/70 transition-all font-bold shadow-inner" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white/50 backdrop-blur-2xl border border-white/80 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.08)] p-8 md:p-10 relative overflow-hidden mt-8">
+                                    <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-white/60 to-transparent rounded-bl-full pointer-events-none"></div>
+                                    <h3 className="text-sm text-[#9BA9EB] font-extrabold tracking-widest uppercase mb-8 drop-shadow-sm text-center md:text-left">
+                                        Podsumowanie i wynik
+                                    </h3>
+                                    <div className="grid grid-cols-3 gap-4 md:gap-8 mb-10 relative z-10">
+                                        <div className="text-center bg-white/50 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm hover:scale-105 transition-transform">
+                                            <p className="text-[9px] md:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 md:mb-2">Łącznie PV</p>
+                                            <p className="text-xl md:text-3xl font-black text-[#1F1A38]">{calculations.totalPv} <span className="text-xs text-gray-400">kWp</span></p>
+                                        </div>
+                                        <div className="text-center bg-white/50 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm hover:scale-105 transition-transform">
+                                            <p className="text-[9px] md:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 md:mb-2">Inwertery</p>
+                                            <p className="text-xl md:text-3xl font-black text-[#1F1A38]">{calculations.totalInverter} <span className="text-xs text-gray-400">kW</span></p>
+                                        </div>
+                                        <div className="text-center bg-white/50 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm hover:scale-105 transition-transform">
+                                            <p className="text-[9px] md:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 md:mb-2">Moc Magazynu</p>
+                                            <p className="text-xl md:text-3xl font-black text-[#1F1A38]">{calculations.totalStoragePower} <span className="text-xs text-gray-400">kW</span></p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+                                        <div className="text-center md:text-left min-w-[200px] md:min-w-[250px]">
+                                            <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center justify-center md:justify-start gap-2">
+                                                Moc Zgłoszeniowa <ArrowRight className="w-4 h-4 text-[#9BA9EB] hidden md:block" />
+                                            </h4>
+                                            <div className="flex items-baseline justify-center md:justify-start gap-2">
+                                                <span className={`text-6xl md:text-7xl font-black tracking-tighter ${calculations.isPowerSufficient ? 'text-[#1F1A38]' : 'text-red-500'}`}>
+                                                    {calculations.totalSystemPower}
+                                                </span>
+                                                <span className="text-2xl font-bold text-[#9BA9EB]">kW</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 w-full">
+                                            {calculations.isPowerSufficient ? (
+                                                <div className="bg-[#B5F566] p-6 md:p-8 rounded-[2rem] flex items-center gap-5 md:gap-6 shadow-[0_15px_30px_rgba(181,245,102,0.3)] transform hover:-translate-y-1 transition-transform border border-white/50">
+                                                    <div className="bg-[#1F1A38] p-3 md:p-4 rounded-xl text-[#B5F566] shadow-inner">
+                                                        <CheckCircle2 className="w-8 h-8 md:w-10 md:h-10" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xl md:text-2xl font-black text-[#1F1A38] mb-1">Moc jest wystarczająca</p>
+                                                        <p className="text-xs md:text-sm font-semibold text-[#1F1A38]/70">Możesz bezpiecznie zgłosić instalację do OSD.</p>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="bg-red-500/90 backdrop-blur-md p-6 md:p-8 rounded-[2rem] flex items-center gap-5 md:gap-6 shadow-[0_15px_30px_rgba(239,68,68,0.3)] transform hover:-translate-y-1 transition-transform border border-red-400/50">
+                                                    <div className="bg-white p-3 md:p-4 rounded-xl text-red-500 shadow-sm animate-pulse">
+                                                        <AlertTriangle className="w-8 h-8 md:w-10 md:h-10" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xl md:text-2xl font-black text-white mb-1">Wymagany Upust Mocy</p>
+                                                        <p className="text-xs md:text-sm font-semibold text-white/90">
+                                                            Zwiększ przyłącze o <span className="bg-white/20 px-2 py-0.5 rounded-md text-white font-black ml-1">{calculations.powerDeficit} kW</span>.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-6">
+                                    Kalkulacje oparte na art. 2 pkt 19 ustawy o OZE
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Renderowanie aplikacji
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
